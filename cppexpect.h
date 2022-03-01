@@ -1,6 +1,6 @@
 #include <string>
 #include <chrono>
-#include <vector>
+#include <initializer_list>
 #include <unistd.h>
 
 namespace cppexpect
@@ -13,8 +13,11 @@ namespace cppexpect
         void stop();
         bool is_running() const;
 
+        // Timeout for expect calls
+        void set_timeout(std::chrono::milliseconds timeout);
+
         // Read bytes
-        int expect(const std::string& output, std::chrono::milliseconds timeout = std::chrono::seconds(30));
+        int expect(const std::string& output);
 
         // Send bytes
         void write(const std::string& value);
@@ -24,7 +27,10 @@ namespace cppexpect
         int fdm;
         int fds;
         pid_t child_pid = 0;
+        std::chrono::milliseconds timeout = std::chrono::seconds(30);
 
         void launch_as_child(const std::string& command);
+
+        int expect(const std::string& output);
     };
 }

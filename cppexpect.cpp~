@@ -22,21 +22,22 @@ bool cppexpect::cppexpect::start(const std::string& command)
     {
         return false;
     }
-
     fdm = posix_openpt(O_RDWR);
     if (fdm < 0)
     {
-        std::cout << "Error %d on posix_openpt()" ;
+        fprintf(stderr, "Error %d on posix_openpt()\n", errno);
         return false;
     }
 
-    if (grantpt(fdm) != 0)
+    auto rc = grantpt(fdm);
+    if (rc != 0)
     {
-        std::cout << "Error %d on grantpt()\n", errno);
+        fprintf(stderr, "Error %d on grantpt()\n", errno);
         return false;
     }
 
-    if (unlockpt(fdm) != 0)
+    rc = unlockpt(fdm);
+    if (rc != 0)
     {
         fprintf(stderr, "Error %d on unlockpt()\n", errno);
         return false;
@@ -72,12 +73,7 @@ bool cppexpect::cppexpect::is_running() const
     return child_pid > 0 && waitpid(child_pid, NULL, WNOHANG) == 0;
 }
 
-void cppexpect::cppexpect::set_timeout(std::chrono::milliseconds timeout)
-{
-    this->timeout = timeout;
-}
-
-int cppexpect::cppexpect::expect(const std::string& output)
+int cppexpect::cppexpect::expect(const std::string& output, std::chrono::milliseconds timeout)
 {
     // Set a file descriptor set to read data
     fd_set fd_in {};
@@ -114,7 +110,6 @@ int cppexpect::cppexpect::expect(const std::string& output)
 #endif
 
             // Check for corresponding string
-            int found_value = find_values();
             if (std::string(input).find(output) != std::string::npos)
             {
                 return 0;
