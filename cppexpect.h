@@ -3,6 +3,7 @@
 #include <initializer_list>
 #include <unistd.h>
 #include <regex>
+#include <functional>
 
 namespace cppexpect
 {
@@ -49,21 +50,14 @@ namespace cppexpect
         // Timeout
         std::chrono::milliseconds timeout = std::chrono::seconds(30);
 
-        // Child process output to scan
-        std::string output;
-        std::chrono::steady_clock::time_point read_start;
-
         // Launch the specific command while being in the child process
         void launch_as_child(const std::string& command);
 
         // Try to read the child output and return the number of read bytes or -1 in case of error
         int read_output(char* buffer, size_t buffer_len);
 
-        // Start the clock for the read timeout
-        void start_read_output();
-
-        // Read output until the timeout is reach, return the number of bytes read or -1
-        // if the timeout has been reached or an error happened
-        int read_output_until_timeout(char* buffer, size_t buffer_len);
+        // Loop and read child process output until the timeout is reached or loop_function return -1
+        // the loop function is called for each line outputed by the child process
+        int expect_loop(std::function<int(const std::string&)>&& loop_function);
     };
 }

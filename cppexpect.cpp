@@ -109,13 +109,8 @@ int cppexpect::cppexpect::expect(const std::regex& pattern)
 
 int cppexpect::cppexpect::expect(std::initializer_list<std::regex> patterns)
 {
-    start_read_output();
-    char buffer[255];
-    int read_bytes = 0;
-    while ((read_bytes = read_output_until_timeout(buffer, sizeof(buffer))) != -1)
+    return expect_loop([&patterns](const std::string& output)
     {
-        output += std::string(buffer, read_bytes);
-
         // Search values
         int i = 0;
         for (auto& pattern : patterns)
@@ -126,8 +121,8 @@ int cppexpect::cppexpect::expect(std::initializer_list<std::regex> patterns)
             }
             i++;
         }
-    }
-    return -1;
+        return -1;
+    });
 }
 
 int cppexpect::cppexpect::expect_exact(const std::string& value)
@@ -137,13 +132,8 @@ int cppexpect::cppexpect::expect_exact(const std::string& value)
 
 int cppexpect::cppexpect::expect_exact(std::initializer_list<std::string> values)
 {
-    start_read_output();
-    char buffer[255];
-    int read_bytes = 0;
-    while ((read_bytes = read_output_until_timeout(buffer, sizeof(buffer))) != -1)
+    return expect_loop([&values](const std::string& output)
     {
-        output += std::string(buffer, read_bytes);
-
         // Search values
         int i = 0;
         for (auto& value : values)
@@ -154,8 +144,8 @@ int cppexpect::cppexpect::expect_exact(std::initializer_list<std::string> values
             }
             i++;
         }
-    }
-    return -1;
+        return -1;
+    });
 }
 
 void cppexpect::cppexpect::write(const std::string& value)
@@ -208,12 +198,6 @@ void cppexpect::cppexpect::launch_as_child(const std::string& command)
     exit(system(command.c_str()));
 }
 
-void cppexpect::cppexpect::start_read_output()
-{
-    read_start = steady_clock::now();
-    output.clear();
-}
-
 int cppexpect::cppexpect::read_output(char* buffer, size_t buffer_len)
 {
     // Check if there is something to read, so we won't block on read()
@@ -247,14 +231,35 @@ int cppexpect::cppexpect::read_output(char* buffer, size_t buffer_len)
     return 0;
 }
 
-int cppexpect::cppexpect::read_output_until_timeout(char* buffer, size_t buffer_len)
+int cppexpect::cppexpect::expect_loop(std::function<int(const std::string&)>&& loop_function)
 {
+    // Start the loop
+    std::string output;
+    output.reserve(255);
+    auto read_start = steady_clock::now();
+    char buffer[255];
+
+    // Loop
     while (duration_cast<milliseconds>(steady_clock::now() - read_start) < timeout)
     {
-        int read_bytes = read_output(buffer, buffer_len);
+        // Read output
+        int read_bytes = read_output(buffer, sizeof(buffer));
         if (read_bytes != 0)
         {
-            return read_bytes;
+            // Update output string
+            auto cut_pos = output.find_last_of('\n');
+            if (cut_pos != std::string::npos)
+            {
+                output = output.substr(cut_pos + 1);
+            }
+            output += std::string(buffer, read_bytes);
+
+            // Run expect function
+            int result = loop_function(output);
+            if (result >= 0)
+            {
+                return result;
+            }
         }
     }
     return -1;
