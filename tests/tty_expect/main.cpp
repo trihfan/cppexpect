@@ -3,13 +3,18 @@
 int main(int argc, char** argv)
 {
     cppexpect::cppexpect expect;
+    expect.set_timeout(std::chrono::seconds(30));
+    expect.set_redirect_child_output(true);
     expect.start("sudo ls");
-    if (expect.expect("Password:", std::chrono::seconds(3)) != 0)
+    if (expect.expect_exact("Password:") != 0)
     {
         return 1;
     }
 
-    expect.write("23vivegohan?T1\n");
-    expect.expect("blabla");
+    expect.stop();
+    expect.wait_for();
+
+    //expect.write_line("23vivegohan?T1");
+    //expect.wait_for();
     return 0;
 }

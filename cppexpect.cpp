@@ -13,8 +13,15 @@
 #include <signal.h>
 #include <string.h>
 #include <iostream>
+#include <algorithm>
+#include <thread>
 
 using namespace std::chrono;
+
+void cppexpect::cppexpect::set_redirect_child_output(bool redirect)
+{
+    redirect_child_output = redirect;
+}
 
 bool cppexpect::cppexpect::start(const std::string& command)
 {
@@ -26,19 +33,19 @@ bool cppexpect::cppexpect::start(const std::string& command)
     fdm = posix_openpt(O_RDWR);
     if (fdm < 0)
     {
-        std::cout << "Error %d on posix_openpt()" ;
+        std::cout << "Error " << errno << " on posix_openpt()" << std::endl;
         return false;
     }
 
     if (grantpt(fdm) != 0)
     {
-        std::cout << "Error %d on grantpt()\n", errno);
+        std::cout << "Error " << errno << " on grantpt()" << std::endl;
         return false;
     }
 
     if (unlockpt(fdm) != 0)
     {
-        fprintf(stderr, "Error %d on unlockpt()\n", errno);
+        std::cout << "Error " << errno << " on unlockpt()" << std::endl;
         return false;
     }
 
@@ -51,6 +58,10 @@ bool cppexpect::cppexpect::start(const std::string& command)
     {
         // Close the slave side of the PTY
         close(fds);
+
+        // Set a file descriptor set to read data
+        std::memset(&fd_in, 0, sizeof(fd_set));
+        FD_SET(fdm, &fd_in);
         return true;
     }
 
@@ -72,56 +83,78 @@ bool cppexpect::cppexpect::is_running() const
     return child_pid > 0 && waitpid(child_pid, NULL, WNOHANG) == 0;
 }
 
+void cppexpect::cppexpect::wait_for()
+{
+    int read_bytes = 0;
+    char buffer[255];
+    while (is_running() || read_bytes > 0)
+    {
+        if (redirect_child_output)
+        {
+            read_bytes = read_output(buffer, sizeof(buffer));
+        }
+        std::this_thread::yield();
+    }
+}
+
 void cppexpect::cppexpect::set_timeout(std::chrono::milliseconds timeout)
 {
     this->timeout = timeout;
 }
 
-int cppexpect::cppexpect::expect(const std::string& output)
+int cppexpect::cppexpect::expect(const std::regex& pattern)
 {
-    // Set a file descriptor set to read data
-    fd_set fd_in {};
-    FD_SET(0, &fd_in);
-    FD_SET(fdm, &fd_in);
+    return expect({ pattern });
+}
 
-    // Read buffer
-    char input[255];
-
-    auto start = steady_clock::now();
-    while (duration_cast<milliseconds>(steady_clock::now() - start) < timeout)
+int cppexpect::cppexpect::expect(std::initializer_list<std::regex> patterns)
+{
+    start_read_output();
+    char buffer[255];
+    int read_bytes = 0;
+    while ((read_bytes = read_output_until_timeout(buffer, sizeof(buffer))) != -1)
     {
-        // Check if there is something to read, so we won't block on read()
-        auto rc = select(fdm + 1, &fd_in, NULL, NULL, NULL);
-        if (rc == -1)
+        output += std::string(buffer, read_bytes);
+
+        // Search values
+        int i = 0;
+        for (auto& pattern : patterns)
         {
-            std::cout <<  "Error " << errno << " on select()" << std::endl;
-            return -1;
-        }
-
-        // If data on master side of PTY
-        if (FD_ISSET(fdm, &fd_in))
-        {
-            rc = read(fdm, input, sizeof(input));
-            if (rc == -1)
+            if (std::regex_match(output, pattern))
             {
-                std::cout <<  "Error " << errno << " on read master PTY" << std::endl;
-                return -1;
+                return i;
             }
-
-            // Output to stdout on debug
-#ifndef NDEBUG
-            std::cout << input;
-#endif
-
-            // Check for corresponding string
-            int found_value = find_values();
-            if (std::string(input).find(output) != std::string::npos)
-            {
-                return 0;
-            }
+            i++;
         }
     }
+    return -1;
+}
 
+int cppexpect::cppexpect::expect_exact(const std::string& value)
+{
+    return expect_exact({ value });
+}
+
+int cppexpect::cppexpect::expect_exact(std::initializer_list<std::string> values)
+{
+    start_read_output();
+    char buffer[255];
+    int read_bytes = 0;
+    while ((read_bytes = read_output_until_timeout(buffer, sizeof(buffer))) != -1)
+    {
+        output += std::string(buffer, read_bytes);
+
+        // Search values
+        int i = 0;
+        for (auto& value : values)
+        {
+            if (output.find(value) != std::string::npos)
+            {
+                return i;
+            }
+            i++;
+        }
+    }
     return -1;
 }
 
@@ -173,4 +206,56 @@ void cppexpect::cppexpect::launch_as_child(const std::string& command)
 
     // Execution of the program
     exit(system(command.c_str()));
+}
+
+void cppexpect::cppexpect::start_read_output()
+{
+    read_start = steady_clock::now();
+    output.clear();
+}
+
+int cppexpect::cppexpect::read_output(char* buffer, size_t buffer_len)
+{
+    // Check if there is something to read, so we won't block on read()
+    auto desc_set_count = select(fdm + 1, &fd_in, NULL, NULL, NULL);
+    if (desc_set_count == -1)
+    {
+        enum class error { bad_file_descriptor = EBADF, interrupted_system_call = EINTR, invalid_argument = EINVAL, cannot_allocate_memory = ENOMEM };
+        std::cout <<  "Error " << errno << " on select()" << std::endl;
+        return -1;
+    }
+
+    // If data on master side of PTY
+    if (FD_ISSET(fdm, &fd_in))
+    {
+        // Read output
+        auto read_bytes = read(fdm, buffer, buffer_len);
+        if (read_bytes == -1)
+        {
+            std::cout <<  "Error " << errno << " on read master PTY" << std::endl;
+            return -1;
+        }
+
+        // Output to stdout
+        if (redirect_child_output)
+        {
+            std::cout << std::string(buffer, read_bytes);
+            std::cout.flush();
+        }
+        return read_bytes;
+    }
+    return 0;
+}
+
+int cppexpect::cppexpect::read_output_until_timeout(char* buffer, size_t buffer_len)
+{
+    while (duration_cast<milliseconds>(steady_clock::now() - read_start) < timeout)
+    {
+        int read_bytes = read_output(buffer, buffer_len);
+        if (read_bytes != 0)
+        {
+            return read_bytes;
+        }
+    }
+    return -1;
 }
