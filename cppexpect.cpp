@@ -87,7 +87,8 @@ void cppexpect::cppexpect::wait_for()
 {
     int read_bytes = 0;
     char buffer[255];
-    while (is_running() || read_bytes > 0)
+    auto start = steady_clock::now();
+    while ((is_running() || read_bytes > 0) && duration_cast<milliseconds>(steady_clock::now() - start) < timeout)
     {
         if (redirect_child_output)
         {
@@ -97,6 +98,11 @@ void cppexpect::cppexpect::wait_for()
     }
 }
 
+void cppexpect::cppexpect::set_timeout(uint64_t timeout_ms)
+{
+    set_timeout(std::chrono::milliseconds(timeout_ms));
+}
+
 void cppexpect::cppexpect::set_timeout(std::chrono::milliseconds timeout)
 {
     this->timeout = timeout;
@@ -104,22 +110,21 @@ void cppexpect::cppexpect::set_timeout(std::chrono::milliseconds timeout)
 
 int cppexpect::cppexpect::expect(const std::regex& pattern)
 {
-    return expect({ pattern });
+    return expect(std::vector<std::regex>{ pattern });
 }
 
-int cppexpect::cppexpect::expect(std::initializer_list<std::regex> patterns)
+int cppexpect::cppexpect::expect(const std::vector<std::regex>& patterns)
 {
     return expect_loop([&patterns](const std::string& output)
     {
         // Search values
         int i = 0;
-        for (auto& pattern : patterns)
+        for (auto it = patterns.begin(); it != patterns.end(); ++it, i++)
         {
-            if (std::regex_match(output, pattern))
+            if (std::regex_match(output, *it))
             {
                 return i;
             }
-            i++;
         }
         return -1;
     });
@@ -127,22 +132,21 @@ int cppexpect::cppexpect::expect(std::initializer_list<std::regex> patterns)
 
 int cppexpect::cppexpect::expect_exact(const std::string& value)
 {
-    return expect_exact({ value });
+    return expect_exact(std::vector<std::string>{ value });
 }
 
-int cppexpect::cppexpect::expect_exact(std::initializer_list<std::string> values)
+int cppexpect::cppexpect::expect_exact(const std::vector<std::string>& values)
 {
     return expect_loop([&values](const std::string& output)
     {
         // Search values
         int i = 0;
-        for (auto& value : values)
+        for (auto it = values.begin(); it != values.end(); ++it, i++)
         {
-            if (output.find(value) != std::string::npos)
+            if (output.find(*it) != std::string::npos)
             {
                 return i;
             }
-            i++;
         }
         return -1;
     });

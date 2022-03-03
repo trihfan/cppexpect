@@ -1,9 +1,9 @@
 #include <string>
 #include <chrono>
-#include <initializer_list>
 #include <unistd.h>
 #include <regex>
 #include <functional>
+#include <vector>
 
 namespace cppexpect
 {
@@ -18,19 +18,20 @@ namespace cppexpect
         void stop();
         bool is_running() const;
 
-        // Wait until the child process end
+        // Wait until the child process end or the timeout is reached
         void wait_for();
 
         // Timeout for expect calls
+        void set_timeout(uint64_t timeout_ms);
         void set_timeout(std::chrono::milliseconds timeout);
 
         // Read and expect patterns
         int expect(const std::regex& pattern);
-        int expect(std::initializer_list<std::regex> patterns);
+        int expect(const std::vector<std::regex>& patterns);
 
         // Read and expect exact string
         int expect_exact(const std::string& value);
-        int expect_exact(std::initializer_list<std::string> values);
+        int expect_exact(const std::vector<std::string>& values);
 
         // Send bytes
         void write(const std::string& value);
