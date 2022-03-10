@@ -69,13 +69,24 @@ bool cppexpect::cppexpect::start(const std::string& command)
     return true;
 }
 
-void cppexpect::cppexpect::stop()
+bool cppexpect::cppexpect::stop(std::chrono::milliseconds timeout)
 {
+    bool result = true;
     if (child_pid && is_running())
     {
-        kill(child_pid, SIGINT);
+        // Ask for termination
+        if (kill(child_pid, SIGTERM) == -1)
+        {
+            std::cout <<  "Error " << errno << " on kill(SIGTERM) child process" << std::endl;
+            result = false;
+        }
+        else
+        {
+            result = join(timeout);
+        }
     }
     child_pid = 0;
+    return result;
 }
 
 bool cppexpect::cppexpect::is_running() const
@@ -83,37 +94,32 @@ bool cppexpect::cppexpect::is_running() const
     return child_pid > 0 && waitpid(child_pid, NULL, WNOHANG) == 0;
 }
 
-void cppexpect::cppexpect::wait_for()
+bool cppexpect::cppexpect::join(std::chrono::milliseconds timeout)
 {
     int read_bytes = 0;
     char buffer[255];
     auto start = steady_clock::now();
-    while ((is_running() || read_bytes > 0) && duration_cast<milliseconds>(steady_clock::now() - start) < timeout)
+    while (is_running() || read_bytes > 0)
     {
+        if (duration_cast<milliseconds>(steady_clock::now() - start) >= timeout)
+        {
+            return false;
+        }
         if (redirect_child_output)
         {
             read_bytes = read_output(buffer, sizeof(buffer));
         }
         std::this_thread::yield();
     }
+    return true;
 }
 
-void cppexpect::cppexpect::set_timeout(uint64_t timeout_ms)
-{
-    set_timeout(std::chrono::milliseconds(timeout_ms));
-}
-
-void cppexpect::cppexpect::set_timeout(std::chrono::milliseconds timeout)
-{
-    this->timeout = timeout;
-}
-
-int cppexpect::cppexpect::expect(const std::regex& pattern)
+int cppexpect::cppexpect::expect(const std::regex& pattern, std::chrono::milliseconds timeout)
 {
     return expect(std::vector<std::regex>{ pattern });
 }
 
-int cppexpect::cppexpect::expect(const std::vector<std::regex>& patterns)
+int cppexpect::cppexpect::expect(const std::vector<std::regex>& patterns, std::chrono::milliseconds timeout)
 {
     return expect_loop([&patterns](const std::string& output)
     {
@@ -127,15 +133,15 @@ int cppexpect::cppexpect::expect(const std::vector<std::regex>& patterns)
             }
         }
         return -1;
-    });
+    }, timeout);
 }
 
-int cppexpect::cppexpect::expect_exact(const std::string& value)
+int cppexpect::cppexpect::expect_exact(const std::string& value, std::chrono::milliseconds timeout)
 {
     return expect_exact(std::vector<std::string>{ value });
 }
 
-int cppexpect::cppexpect::expect_exact(const std::vector<std::string>& values)
+int cppexpect::cppexpect::expect_exact(const std::vector<std::string>& values, std::chrono::milliseconds timeout)
 {
     return expect_loop([&values](const std::string& output)
     {
@@ -149,7 +155,7 @@ int cppexpect::cppexpect::expect_exact(const std::vector<std::string>& values)
             }
         }
         return -1;
-    });
+    }, timeout);
 }
 
 void cppexpect::cppexpect::write(const std::string& value)
@@ -205,10 +211,10 @@ void cppexpect::cppexpect::launch_as_child(const std::string& command)
 int cppexpect::cppexpect::read_output(char* buffer, size_t buffer_len)
 {
     // Check if there is something to read, so we won't block on read()
-    auto desc_set_count = select(fdm + 1, &fd_in, NULL, NULL, NULL);
+    timeval timeout { 1, 0 };
+    auto desc_set_count = select(fdm + 1, &fd_in, NULL, NULL, &timeout);
     if (desc_set_count == -1)
     {
-        enum class error { bad_file_descriptor = EBADF, interrupted_system_call = EINTR, invalid_argument = EINVAL, cannot_allocate_memory = ENOMEM };
         std::cout <<  "Error " << errno << " on select()" << std::endl;
         return -1;
     }
@@ -217,7 +223,7 @@ int cppexpect::cppexpect::read_output(char* buffer, size_t buffer_len)
     if (FD_ISSET(fdm, &fd_in))
     {
         // Read output
-        auto read_bytes = read(fdm, buffer, buffer_len);
+        auto read_bytes = ::read(fdm, buffer, buffer_len);
         if (read_bytes == -1)
         {
             std::cout <<  "Error " << errno << " on read master PTY" << std::endl;
@@ -235,7 +241,7 @@ int cppexpect::cppexpect::read_output(char* buffer, size_t buffer_len)
     return 0;
 }
 
-int cppexpect::cppexpect::expect_loop(std::function<int(const std::string&)>&& loop_function)
+int cppexpect::cppexpect::expect_loop(std::function<int(const std::string&)>&& loop_function, std::chrono::milliseconds timeout)
 {
     // Start the loop
     std::string output;

@@ -4,9 +4,12 @@
 #include <regex>
 #include <functional>
 #include <vector>
+#include <limits>
 
 namespace cppexpect
 {
+    static constexpr std::chrono::milliseconds inf_timeout = std::chrono::milliseconds(std::numeric_limits<int64_t>::max());
+
     class cppexpect
     {
     public:
@@ -15,23 +18,19 @@ namespace cppexpect
 
         // Start/stop
         bool start(const std::string& command);
-        void stop();
+        bool stop(std::chrono::milliseconds timeout = inf_timeout);
         bool is_running() const;
 
-        // Wait until the child process end or the timeout is reached
-        void wait_for();
-
-        // Timeout for expect calls
-        void set_timeout(uint64_t timeout_ms);
-        void set_timeout(std::chrono::milliseconds timeout);
+        // Wait until the child process end
+        bool join(std::chrono::milliseconds timeout = inf_timeout);
 
         // Read and expect patterns
-        int expect(const std::regex& pattern);
-        int expect(const std::vector<std::regex>& patterns);
+        int expect(const std::regex& pattern, std::chrono::milliseconds timeout = std::chrono::seconds(5));
+        int expect(const std::vector<std::regex>& patterns, std::chrono::milliseconds timeout = std::chrono::seconds(5));
 
         // Read and expect exact string
-        int expect_exact(const std::string& value);
-        int expect_exact(const std::vector<std::string>& values);
+        int expect_exact(const std::string& value, std::chrono::milliseconds timeout = std::chrono::seconds(5));
+        int expect_exact(const std::vector<std::string>& values, std::chrono::milliseconds timeout = std::chrono::seconds(5));
 
         // Send bytes
         void write(const std::string& value);
@@ -48,9 +47,6 @@ namespace cppexpect
         // Child process pid
         pid_t child_pid = 0;
 
-        // Timeout
-        std::chrono::milliseconds timeout = std::chrono::seconds(30);
-
         // Launch the specific command while being in the child process
         void launch_as_child(const std::string& command);
 
@@ -59,6 +55,6 @@ namespace cppexpect
 
         // Loop and read child process output until the timeout is reached or loop_function return -1
         // the loop function is called for each line outputed by the child process
-        int expect_loop(std::function<int(const std::string&)>&& loop_function);
+        int expect_loop(std::function<int(const std::string&)>&& loop_function, std::chrono::milliseconds timeout);
     };
 }
