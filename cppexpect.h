@@ -42,7 +42,6 @@ namespace cppexpect
 
         // File descriptor for child process
         int fdm, fds;
-        fd_set fd_in;
 
         // Child process pid
         pid_t child_pid = 0;

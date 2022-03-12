@@ -58,10 +58,6 @@ bool cppexpect::cppexpect::start(const std::string& command)
     {
         // Close the slave side of the PTY
         close(fds);
-
-        // Set a file descriptor set to read data
-        std::memset(&fd_in, 0, sizeof(fd_set));
-        FD_SET(fdm, &fd_in);
         return true;
     }
 
@@ -211,6 +207,8 @@ void cppexpect::cppexpect::launch_as_child(const std::string& command)
 int cppexpect::cppexpect::read_output(char* buffer, size_t buffer_len)
 {
     // Check if there is something to read, so we won't block on read()
+    fd_set fd_in {};
+    FD_SET(fdm, &fd_in);
     timeval timeout { 1, 0 };
     auto desc_set_count = select(fdm + 1, &fd_in, NULL, NULL, &timeout);
     if (desc_set_count == -1)
@@ -257,11 +255,11 @@ int cppexpect::cppexpect::expect_loop(std::function<int(const std::string&)>&& l
         if (read_bytes != 0)
         {
             // Update output string
-            auto cut_pos = output.find_last_of('\n');
+            /*auto cut_pos = output.find_last_of('\n');
             if (cut_pos != std::string::npos)
             {
                 output = output.substr(cut_pos + 1);
-            }
+            }*/
             output += std::string(buffer, read_bytes);
 
             // Run expect function
