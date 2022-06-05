@@ -243,8 +243,8 @@ int cppexpect::cppexpect::read_output(char* buffer, size_t buffer_len)
 int cppexpect::cppexpect::expect_loop(std::function<int(const std::string&)>&& loop_function, std::chrono::milliseconds timeout)
 {
     // Start the loop
-    std::string output;
-    output.reserve(255);
+    current_output.clear();
+    current_output.reserve(255);
     auto read_start = steady_clock::now();
     char buffer[255];
 
@@ -255,16 +255,10 @@ int cppexpect::cppexpect::expect_loop(std::function<int(const std::string&)>&& l
         int read_bytes = read_output(buffer, sizeof(buffer));
         if (read_bytes != 0)
         {
-            // Update output string
-            /*auto cut_pos = output.find_last_of('\n');
-            if (cut_pos != std::string::npos)
-            {
-                output = output.substr(cut_pos + 1);
-            }*/
-            output += std::string(buffer, read_bytes);
+            current_output += std::string(buffer, read_bytes);
 
             // Run expect function
-            int result = loop_function(output);
+            int result = loop_function(current_output);
             if (result >= 0)
             {
                 return result;
@@ -272,4 +266,10 @@ int cppexpect::cppexpect::expect_loop(std::function<int(const std::string&)>&& l
         }
     }
     return -1;
+}
+
+
+const std::string& cppexpect::cppexpect::get_last_output() const
+{
+    return current_output;
 }
