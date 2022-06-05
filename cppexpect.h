@@ -36,6 +36,9 @@ namespace cppexpect
         void write(const std::string& value);
         void write_line(const std::string& value);
 
+        // Get the output of the process since last expect
+        const std::string& get_last_output() const;
+
     private:
         // Flag to redirect child output to father output
         bool redirect_child_output = false;
@@ -45,6 +48,9 @@ namespace cppexpect
 
         // Child process pid
         pid_t child_pid = 0;
+
+        // Current loop output
+        std::string current_output;
 
         // Launch the specific command while being in the child process
         void launch_as_child(const std::string& command);
